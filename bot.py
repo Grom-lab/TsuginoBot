@@ -1,24 +1,51 @@
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
 
-# Ваш токен
-TOKEN = 'YOUR_BOT_TOKEN'
+import os
 
-# Функция для команды /start
+# Получаем токен из переменной окружения
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# Функция для обработки команды /start
 def start(update: Update, context: CallbackContext):
-    update.message.reply_text('Привет, я твой бот!')
+    # Создаем кнопки
+    keyboard = [
+        [InlineKeyboardButton("Кнопка 1", callback_data='button1')],
+        [InlineKeyboardButton("Кнопка 2", callback_data='button2')],
+        [InlineKeyboardButton("Кнопка 3", callback_data='button3')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    # Отправляем сообщение с кнопками
+    update.message.reply_text("Привет! Выберите одну из кнопок:", reply_markup=reply_markup)
+
+# Функция для обработки нажатий на кнопки
+def button_click(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+
+    # Проверяем, на какую кнопку нажали, и отправляем ответ
+    if query.data == 'button1':
+        query.edit_message_text(text="Вы нажали Кнопка 1!")
+    elif query.data == 'button2':
+        query.edit_message_text(text="Вы нажали Кнопка 2!")
+    elif query.data == 'button3':
+        query.edit_message_text(text="Вы нажали Кнопка 3!")
 
 # Главная функция для запуска бота
 def main():
+    # Создаем объект Updater
     updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+    dispatcher = updater.dispatcher
 
-    # Добавляем обработчики команд
-    dp.add_handler(CommandHandler("start", start))
+    # Обработчики команд
+    dispatcher.add_handler(CommandHandler("start", start))
 
-    # Запуск бота
+    # Обработчик нажатий на кнопки
+    dispatcher.add_handler(CallbackQueryHandler(button_click))
+
+    # Запускаем бота
     updater.start_polling()
     updater.idle()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

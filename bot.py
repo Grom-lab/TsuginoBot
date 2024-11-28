@@ -1,12 +1,11 @@
-import os
 import requests
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
 from aiogram.types import InputFile
 from aiogram.utils import executor
 
-# Инициализация бота
-API_TOKEN = os.getenv("BOT_TOKEN", "7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8")
+# Указываем токен прямо в коде
+API_TOKEN = "7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8"
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
 

@@ -5,7 +5,8 @@ import zipfile
 from io import BytesIO
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext
-from telegram.ext import MessageHandler, Filters  # Обновленный импорт
+from telegram.ext import MessageHandler
+from telegram.ext.filters import Text  # Исправлено на правильный импорт
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -56,13 +57,13 @@ def handle_comic_link(update: Update, context: CallbackContext):
 
 # Основная функция
 def main():
-    updater = Updater(TOKEN, use_context=True)
+    updater = Updater(TOKEN)
     dispatcher = updater.dispatcher
 
     # Обработчик команды /start
     dispatcher.add_handler(CommandHandler('start', start))
     # Обработчик ссылки на комикс
-    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_comic_link))
+    dispatcher.add_handler(MessageHandler(Text & ~Text.command, handle_comic_link))
 
     # Запуск бота
     updater.start_polling()

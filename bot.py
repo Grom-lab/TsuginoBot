@@ -4,23 +4,34 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 
-# Токен бота
-API_TOKEN = "7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8"
+# Данные для авторизации
+USERNAME = "Albatas"
+PASSWORD = "Grom_1228"
+LOGIN_URL = "https://com-x.life/login"
 BASE_URL = "https://com-x.life"
 
-bot = Bot(token=API_TOKEN)
-dp = Dispatcher(bot)
+# Создаём сессию
+session = requests.Session()
 
-# Клавиатура для главного меню
-menu_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-menu_keyboard.add(KeyboardButton("🔍 Поиск по названию"))
-menu_keyboard.add(KeyboardButton("🌐 Поиск по ссылке"))
+# Авторизация на сайте
+def login():
+    payload = {
+        "username": USERNAME,
+        "password": PASSWORD,
+    }
+    response = session.post(LOGIN_URL, data=payload)
+    if response.status_code == 200 and "logout" in response.text:
+        print("Успешная авторизация.")
+        return True
+    else:
+        print("Ошибка авторизации. Проверьте логин и пароль.")
+        return False
 
 
 # Поиск комиксов по названию
 def search_comics(query):
     search_url = f"{BASE_URL}/search?q={query}"
-    response = requests.get(search_url)
+    response = session.get(search_url)
     if response.status_code != 200:
         return []
 
@@ -38,7 +49,7 @@ def search_comics(query):
 
 # Получение ссылок для скачивания с конкретной страницы
 def get_download_links(comic_url):
-    response = requests.get(comic_url)
+    response = session.get(comic_url)
     if response.status_code != 200:
         return []
 
@@ -53,6 +64,17 @@ def get_download_links(comic_url):
 
     return links
 
+
+# Telegram бот
+API_TOKEN = "7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8"
+
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher(bot)
+
+# Клавиатура для главного меню
+menu_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+menu_keyboard.add(KeyboardButton("🔍 Поиск по названию"))
+menu_keyboard.add(KeyboardButton("🌐 Поиск по ссылке"))
 
 # Переменная для отслеживания режима работы
 user_mode = {}
@@ -123,4 +145,8 @@ async def handle_input(message: types.Message):
 
 # Запуск бота
 if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
+    # Авторизация перед запуском бота
+    if not login():
+        print("Ошибка авторизации. Бот не может быть запущен.")
+    else:
+        executor.start_polling(dp, skip_updates=True)

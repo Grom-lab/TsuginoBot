@@ -116,10 +116,10 @@ async def handle_input(message: types.Message):
 
         reply_text = "Найдено:\n\n"
         for idx, comic in enumerate(comics, start=1):
-            reply_text += f"{idx}. [{comic['title']}]({comic['link']})\n"
+            reply_text += f"{idx}. [{comic['title']}]({comic['link']})\n"  # Форматируем ссылки
 
         reply_text += "\nВведите номер для получения ссылок на скачивание."
-        await message.reply(reply_text, parse_mode="Markdown")
+        await message.reply(reply_text, parse_mode="Markdown")  # Используем Markdown для форматирования
 
     # Если выбран поиск по ссылке
     elif mode == "search_by_link":
@@ -135,7 +135,7 @@ async def handle_input(message: types.Message):
 
         reply_text = "Ссылки на скачивание:\n\n"
         for link in download_links:
-            reply_text += f"- [{link['file_name']}]({link['file_url']})\n"
+            reply_text += f"- [{link['file_name']}]({link['file_url']})\n"  # Форматируем ссылки
 
         await message.reply(reply_text, parse_mode="Markdown")
 
@@ -145,7 +145,7 @@ async def handle_input(message: types.Message):
 
 # Запуск бота
 if __name__ == "__main__":
-    # Авторизация перед запуском бота
+  # Авторизация перед запуском бота
     if not login():
         print("Ошибка авторизации. Бот не может быть запущен.")
     else:

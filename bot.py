@@ -1,18 +1,23 @@
 import requests
 from bs4 import BeautifulSoup
 from aiogram import Bot, Dispatcher, types
-from aiogram.types import InputFile
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils import executor
 
-# Указываем токен прямо в коде
+# Токен бота
 API_TOKEN = "7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8"
+BASE_URL = "https://com-x.life"
+
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
 
-# URL сайта
-BASE_URL = "https://com-x.life"
+# Клавиатура для главного меню
+menu_keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
+menu_keyboard.add(KeyboardButton("🔍 Поиск по названию"))
+menu_keyboard.add(KeyboardButton("🌐 Поиск по ссылке"))
 
-# Поиск манги/комиксов
+
+# Поиск комиксов по названию
 def search_comics(query):
     search_url = f"{BASE_URL}/search?q={query}"
     response = requests.get(search_url)
@@ -30,7 +35,8 @@ def search_comics(query):
 
     return comics
 
-# Получение ссылок для скачивания
+
+# Получение ссылок для скачивания с конкретной страницы
 def get_download_links(comic_url):
     response = requests.get(comic_url)
     if response.status_code != 200:
@@ -47,50 +53,73 @@ def get_download_links(comic_url):
 
     return links
 
+
+# Переменная для отслеживания режима работы
+user_mode = {}
+
+
 # Обработка команды /start
 @dp.message_handler(commands=["start"])
 async def send_welcome(message: types.Message):
-    await message.reply("Привет! Я помогу найти и скачать мангу или комиксы. Введите название для поиска.")
+    user_mode[message.from_user.id] = None
+    await message.reply(
+        "Добро пожаловать! Выберите, что вы хотите сделать:",
+        reply_markup=menu_keyboard
+    )
 
-# Обработка текста (поиск)
+
+# Обработка выбора из меню
+@dp.message_handler(lambda message: message.text in ["🔍 Поиск по названию", "🌐 Поиск по ссылке"])
+async def handle_menu_selection(message: types.Message):
+    if message.text == "🔍 Поиск по названию":
+        user_mode[message.from_user.id] = "search_by_name"
+        await message.reply("Введите название для поиска:")
+    elif message.text == "🌐 Поиск по ссылке":
+        user_mode[message.from_user.id] = "search_by_link"
+        await message.reply("Введите ссылку на комикс/мангу:")
+
+
+# Обработка текста в зависимости от режима
 @dp.message_handler()
-async def handle_search(message: types.Message):
-    query = message.text
-    comics = search_comics(query)
+async def handle_input(message: types.Message):
+    mode = user_mode.get(message.from_user.id)
 
-    if not comics:
-        await message.reply("Ничего не найдено. Попробуйте другое название.")
-        return
+    # Если выбран поиск по названию
+    if mode == "search_by_name":
+        query = message.text
+        comics = search_comics(query)
+        if not comics:
+            await message.reply("Ничего не найдено. Попробуйте другое название.")
+            return
 
-    reply_text = "Найдено:\n\n"
-    for idx, comic in enumerate(comics, start=1):
-        reply_text += f"{idx}. [{comic['title']}]({comic['link']})\n"
+        reply_text = "Найдено:\n\n"
+        for idx, comic in enumerate(comics, start=1):
+            reply_text += f"{idx}. [{comic['title']}]({comic['link']})\n"
 
-    reply_text += "\nВыберите номер для получения ссылок на скачивание."
-    await message.reply(reply_text, parse_mode="Markdown")
+        reply_text += "\nВведите номер для получения ссылок на скачивание."
+        await message.reply(reply_text, parse_mode="Markdown")
 
-# Обработка номера выбранного комикса
-@dp.message_handler(lambda message: message.text.isdigit())
-async def handle_selection(message: types.Message):
-    idx = int(message.text) - 1
-    comics = search_comics(message.reply_to_message.text)
+    # Если выбран поиск по ссылке
+    elif mode == "search_by_link":
+        url = message.text
+        if not url.startswith(BASE_URL):
+            await message.reply("Некорректная ссылка. Убедитесь, что вы ввели ссылку с сайта com-x.life.")
+            return
 
-    if idx < 0 or idx >= len(comics):
-        await message.reply("Некорректный выбор. Попробуйте ещё раз.")
-        return
+        download_links = get_download_links(url)
+        if not download_links:
+            await message.reply("Ссылки на скачивание не найдены.")
+            return
 
-    comic = comics[idx]
-    download_links = get_download_links(comic["link"])
+        reply_text = "Ссылки на скачивание:\n\n"
+        for link in download_links:
+            reply_text += f"- [{link['file_name']}]({link['file_url']})\n"
 
-    if not download_links:
-        await message.reply("Ссылки на скачивание не найдены.")
-        return
+        await message.reply(reply_text, parse_mode="Markdown")
 
-    reply_text = f"Ссылки на скачивание для {comic['title']}:\n\n"
-    for link in download_links:
-        reply_text += f"- [{link['file_name']}]({link['file_url']})\n"
+    else:
+        await message.reply("Выберите действие в главном меню.")
 
-    await message.reply(reply_text, parse_mode="Markdown")
 
 # Запуск бота
 if __name__ == "__main__":

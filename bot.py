@@ -1,79 +1,71 @@
+import logging
 import os
 import requests
-from bs4 import BeautifulSoup
+import zipfile
+from io import BytesIO
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext
-from zipfile import ZipFile
+from telegram.ext import MessageHandler, Filters
+from bs4 import BeautifulSoup
 
-# Токен бота (замените на ваш токен)
-TOKEN = "7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8"
+# Настройка логирования
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                    level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# Функция для скачивания файлов с Яндекс.Диска
-def download_from_yandex(disk_url, download_folder):
-    # Загружаем страницу и получаем ссылку на файл
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    response = requests.get(disk_url, headers=headers)
+# Ваш токен бота
+TOKEN = '7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8'
+
+# Функция для скачивания и упаковки комикса в zip
+def download_comic(url):
+    # Получаем страницу с комиксом
+    response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
-    
-    # Извлекаем ссылку для скачивания
-    download_link = soup.find('a', {'class': 'b-link'})['href']
-    
-    # Скачиваем файл по найденной ссылке
-    response = requests.get(download_link, stream=True)
-    filename = os.path.join(download_folder, disk_url.split('/')[-1] + '.zip')
-    
-    with open(filename, 'wb') as file:
-        for chunk in response.iter_content(1024):
-            file.write(chunk)
-    
-    return filename
 
-# Функция для создания архива
-def create_zip(comic_urls, zip_filename):
-    with ZipFile(zip_filename, 'w') as zipf:
-        for url in comic_urls:
-            file_path = download_from_yandex(url, 'downloads')
-            zipf.write(file_path, os.path.basename(file_path))
+    # Ищем ссылки на главы комикса (предположим, что ссылки на Яндекс.Диск находятся в <a> тегах)
+    chapters = soup.find_all('a', href=True)
+    file_urls = []
+    
+    for chapter in chapters:
+        if 'disk.yandex.ru' in chapter['href']:  # Смотрим, что ссылка ведет на Яндекс.Диск
+            file_urls.append(chapter['href'])
+    
+    # Скачиваем все главы и упаковываем их в zip
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
+        for index, file_url in enumerate(file_urls):
+            # Скачиваем изображение/главу
+            file_data = requests.get(file_url).content
+            zip_file.writestr(f"chapter_{index + 1}.jpg", file_data)
+    
+    zip_buffer.seek(0)
+    return zip_buffer
 
-# Обработчик команды /start
+# Функция обработки команды /start
 def start(update: Update, context: CallbackContext):
-    update.message.reply_text('Привет! Отправь ссылку на комикс с comicsdb.ru.')
+    update.message.reply_text('Привет! Отправь ссылку на комикс, и я отправлю тебе его в формате zip.')
 
-# Обработчик команды /download
-def download_comic(update: Update, context: CallbackContext):
+# Функция обработки ссылки на комикс
+def handle_comic_link(update: Update, context: CallbackContext):
+    url = update.message.text
     try:
-        comic_url = context.args[0]  # Получаем ссылку на комикс из сообщения
-        comic_urls = get_comic_links(comic_url)  # Функция для извлечения ссылок глав с комиксом
-        
-        # Создание архива с главами
-        zip_filename = '/tmp/comic.zip'  # Временно сохраняем zip на сервере
-        create_zip(comic_urls, zip_filename)
-        
-        # Отправляем архив пользователю
-        with open(zip_filename, 'rb') as f:
-            update.message.reply_document(f)
-
+        zip_buffer = download_comic(url)
+        # Отправляем zip файл пользователю
+        update.message.reply_document(document=zip_buffer, filename="comic.zip")
     except Exception as e:
-        update.message.reply_text(f"Ошибка: {str(e)}")
+        update.message.reply_text(f"Произошла ошибка: {str(e)}")
 
-# Функция для извлечения ссылок глав
-def get_comic_links(comic_url):
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    response = requests.get(comic_url, headers=headers)
-    soup = BeautifulSoup(response.text, 'html.parser')
-    
-    # Найдем все ссылки на главы
-    chapter_links = [a['href'] for a in soup.find_all('a', {'class': 'chapter-link'})]
-    return chapter_links
-
+# Основная функция
 def main():
-    # Настройка и запуск бота
     updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
-    
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("download", download_comic))
-    
+    dispatcher = updater.dispatcher
+
+    # Обработчик команды /start
+    dispatcher.add_handler(CommandHandler('start', start))
+    # Обработчик ссылки на комикс
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_comic_link))
+
+    # Запуск бота
     updater.start_polling()
     updater.idle()
 

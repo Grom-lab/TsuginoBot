@@ -5,8 +5,7 @@ import zipfile
 from io import BytesIO
 from telegram import Update
 from telegram.ext import Updater, CommandHandler, CallbackContext
-from telegram.ext import MessageHandler
-from telegram.ext.filters import Filters  # Изменено
+from telegram.ext import MessageHandler, Filters  # Обновленный импорт
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',

@@ -1,73 +1,84 @@
+from aiogram import Bot, Dispatcher, executor, types
+import openai
 import logging
+import json
 import os
-import requests
-import zipfile
-from io import BytesIO
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
-from telegram.ext import MessageHandler
-from telegram.ext.filters import Text  # Исправлено на правильный импорт
+
+# Токен Telegram-бота
+TELEGRAM_API_TOKEN = "7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8"
+
+# API-ключ OpenAI
+OPENAI_API_KEY = "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"
+
+# Устанавливаем API-ключ для OpenAI
+openai.api_key = OPENAI_API_KEY
 
 # Настройка логирования
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-                    level=logging.INFO)
-logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
-# Ваш токен бота
-TOKEN = '7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8'
+# Инициализация бота и диспетчера
+bot = Bot(token=TELEGRAM_API_TOKEN)
+dp = Dispatcher(bot)
 
-# Функция для скачивания и упаковки комикса в zip
-def download_comic(url):
-    # Получаем страницу с комиксом
-    response = requests.get(url)
-    soup = BeautifulSoup(response.text, 'html.parser')
+# Файл для хранения диалогов
+DIALOGS_FILE = "dialogs.json"
 
-    # Ищем ссылки на главы комикса (предположим, что ссылки на Яндекс.Диск находятся в <a> тегах)
-    chapters = soup.find_all('a', href=True)
-    file_urls = []
-    
-    for chapter in chapters:
-        if 'disk.yandex.ru' in chapter['href']:  # Смотрим, что ссылка ведет на Яндекс.Диск
-            file_urls.append(chapter['href'])
-    
-    # Скачиваем все главы и упаковываем их в zip
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w') as zip_file:
-        for index, file_url in enumerate(file_urls):
-            # Скачиваем изображение/главу
-            file_data = requests.get(file_url).content
-            zip_file.writestr(f"chapter_{index + 1}.jpg", file_data)
-    
-    zip_buffer.seek(0)
-    return zip_buffer
+# Личность персонажа
+CHARACTER_DESCRIPTION = """
+Ты — друг пользователя. Ты общаешься просто и дружелюбно, без лишнего пафоса. Иногда можешь пошутить, но ты всегда поддерживаешь разговор на равных.
+"""
 
-# Функция обработки команды /start
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text('Привет! Отправь ссылку на комикс, и я отправлю тебе его в формате zip.')
+# Загрузка диалогов из файла
+if os.path.exists(DIALOGS_FILE):
+    with open(DIALOGS_FILE, "r") as file:
+        dialogs = json.load(file)
+else:
+    dialogs = {}
 
-# Функция обработки ссылки на комикс
-def handle_comic_link(update: Update, context: CallbackContext):
-    url = update.message.text
+# Сохранение диалогов в файл
+def save_dialogs():
+    with open(DIALOGS_FILE, "w") as file:
+        json.dump(dialogs, file, indent=4)
+
+# Команда /start
+@dp.message_handler(commands=["start"])
+async def start_command(message: types.Message):
+    user_id = str(message.from_user.id)
+    if user_id not in dialogs:
+        dialogs[user_id] = []
+    await message.reply("Привет! Я просто твой друг. Пиши, о чём хочешь поговорить.")
+
+# Обработка всех сообщений
+@dp.message_handler()
+async def chat_with_friend(message: types.Message):
+    user_id = str(message.from_user.id)
+    if user_id not in dialogs:
+        dialogs[user_id] = []
+
+    # Добавляем сообщение пользователя в диалог
+    dialogs[user_id].append({"role": "user", "content": message.text})
+
     try:
-        zip_buffer = download_comic(url)
-        # Отправляем zip файл пользователю
-        update.message.reply_document(document=zip_buffer, filename="comic.zip")
+        # Отправляем запрос в OpenAI
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "system", "content": CHARACTER_DESCRIPTION}] + dialogs[user_id]
+        )
+
+        # Ответ OpenAI
+        reply = response["choices"][0]["message"]["content"]
+        dialogs[user_id].append({"role": "assistant", "content": reply})
+
+        # Отправляем ответ пользователю
+        await message.reply(reply)
+
     except Exception as e:
-        update.message.reply_text(f"Произошла ошибка: {str(e)}")
+        logging.error(f"Ошибка: {e}")
+        await message.reply("Ой, что-то пошло не так. Попробуй ещё раз позже.")
 
-# Основная функция
-def main():
-    updater = Updater(TOKEN)
-    dispatcher = updater.dispatcher
+    # Сохраняем обновлённый диалог
+    save_dialogs()
 
-    # Обработчик команды /start
-    dispatcher.add_handler(CommandHandler('start', start))
-    # Обработчик ссылки на комикс
-    dispatcher.add_handler(MessageHandler(Text & ~Text.command, handle_comic_link))
-
-    # Запуск бота
-    updater.start_polling()
-    updater.idle()
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True)
+  

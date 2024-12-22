@@ -1,16 +1,15 @@
+import logging
 from aiogram import Bot, Dispatcher, executor, types
 import openai
-import logging
-import json
-import os
+import random
 
-# Токен Telegram-бота
+# Telegram API токен
 TELEGRAM_API_TOKEN = "7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8"
 
-# API-ключ OpenAI
+# OpenAI API токен
 OPENAI_API_KEY = "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"
 
-# Устанавливаем API-ключ для OpenAI
+# Устанавливаем API-ключ OpenAI
 openai.api_key = OPENAI_API_KEY
 
 # Настройка логирования
@@ -20,65 +19,51 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TELEGRAM_API_TOKEN)
 dp = Dispatcher(bot)
 
-# Файл для хранения диалогов
-DIALOGS_FILE = "dialogs.json"
+# Описание действий и звуков
+ACTIONS = [
+    "*потянулся*", "*зевнул*", "*улыбнулся*", "*подмигнул*", "*посмотрел на тебя*"
+]
 
-# Личность персонажа
+SOUNDS = ["~ах", "~мх", "~мхм", "~мм"]
+
+# Описание персонажа
 CHARACTER_DESCRIPTION = """
-Ты — друг пользователя. Ты общаешься просто и дружелюбно, без лишнего пафоса. Иногда можешь пошутить, но ты всегда поддерживаешь разговор на равных.
+Ты — друг пользователя. Общение непринужденное и дружеское. Ты часто вставляешь действия (в формате *действие*) 
+и звуки (в формате ~звук) для создания более живой беседы.
 """
 
-# Загрузка диалогов из файла
-if os.path.exists(DIALOGS_FILE):
-    with open(DIALOGS_FILE, "r") as file:
-        dialogs = json.load(file)
-else:
-    dialogs = {}
-
-# Сохранение диалогов в файл
-def save_dialogs():
-    with open(DIALOGS_FILE, "w") as file:
-        json.dump(dialogs, file, indent=4)
-
-# Команда /start
+# Обработка команды /start
 @dp.message_handler(commands=["start"])
 async def start_command(message: types.Message):
-    user_id = str(message.from_user.id)
-    if user_id not in dialogs:
-        dialogs[user_id] = []
-    await message.reply("Привет! Я просто твой друг. Пиши, о чём хочешь поговорить.")
+    await message.reply("Привет! Давай просто поболтаем. Пиши что угодно, а я поддержу разговор!")
 
-# Обработка всех сообщений
+# Обработка сообщений
 @dp.message_handler()
-async def chat_with_friend(message: types.Message):
-    user_id = str(message.from_user.id)
-    if user_id not in dialogs:
-        dialogs[user_id] = []
-
-    # Добавляем сообщение пользователя в диалог
-    dialogs[user_id].append({"role": "user", "content": message.text})
-
+async def chat_with_character(message: types.Message):
     try:
-        # Отправляем запрос в OpenAI
+        # Генерация действия или звука
+        action_or_sound = random.choice(ACTIONS + SOUNDS)
+
+        # Запрос в OpenAI для генерации ответа
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": CHARACTER_DESCRIPTION}] + dialogs[user_id]
+            messages=[
+                {"role": "system", "content": CHARACTER_DESCRIPTION},
+                {"role": "user", "content": message.text}
+            ]
         )
 
         # Ответ OpenAI
-        reply = response["choices"][0]["message"]["content"]
-        dialogs[user_id].append({"role": "assistant", "content": reply})
+        gpt_reply = response["choices"][0]["message"]["content"]
 
-        # Отправляем ответ пользователю
+        # Формируем итоговый ответ
+        reply = f"{gpt_reply} {action_or_sound}"
         await message.reply(reply)
 
     except Exception as e:
         logging.error(f"Ошибка: {e}")
-        await message.reply("Ой, что-то пошло не так. Попробуй ещё раз позже.")
-
-    # Сохраняем обновлённый диалог
-    save_dialogs()
+        await message.reply("Что-то пошло не так. Давай попробуем ещё раз!")
 
 if __name__ == "__main__":
     executor.start_polling(dp, skip_updates=True)
-  
+    

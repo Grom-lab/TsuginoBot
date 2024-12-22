@@ -4,7 +4,7 @@ from aiogram import Bot, Dispatcher, executor, types
 import random
 
 # Токены
-TELEGRAM_API_TOKEN = "7122707567:AAFFWCTyE6XhhFqv1hAe-DsVvBq5dlkfcQ8"
+TELEGRAM_API_TOKEN = "7122707567:AAGBqdq1VUOG7HrhTWYDcRuMQCQdDvSzJy8"
 OPENAI_API_KEY = "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"
 
 # Настройка логирования

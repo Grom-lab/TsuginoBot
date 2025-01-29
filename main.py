@@ -1,114 +1,57 @@
-import logging
+import os
+import telebot
 import requests
-from aiogram import Bot, Dispatcher, executor, types
-import random
+from bs4 import BeautifulSoup
+from dotenv import load_dotenv
 
-# Токены
-TELEGRAM_API_TOKEN = "7122707567:AAGBqdq1VUOG7HrhTWYDcRuMQCQdDvSzJy8"
-OPENAI_API_KEY = "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"
+load_dotenv()
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+bot = telebot.TeleBot(TOKEN)
 
-# Инициализация бота
-bot = Bot(token=TELEGRAM_API_TOKEN)
-dp = Dispatcher(bot)
+def search_fandom(query):
+    url = "https://www.fandom.com/search"
+    params = {'query': query, 'resultsLang': 'en'}
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+    response = requests.get(url, params=params, headers=headers)
+    results = []
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        items = soup.find_all('div', class_='search-result')
+        for item in items:
+            title_elem = item.find('h3', class_='title')
+            link_elem = item.find('a', class_='link')
+            snippet_elem = item.find('div', class_='snippet')
+            if title_elem and link_elem:
+                title = title_elem.text.strip()
+                link = link_elem['href']
+                desc = snippet_elem.text.strip() if snippet_elem else ''
+                results.append({'title': title, 'url': link, 'description': desc})
+    return results
 
-# Хранилище режимов пользователей
-user_modes = {}
-
-# Действия и звуки для безопасного режима
-SAFE_ACTIONS = ["*улыбнулся*", "*потянулся*", "*подмигнул*"]
-SAFE_SOUNDS = ["~мм", "~мхм", "~хех"]
-
-# Действия и звуки для 18+ режима
-NSFW_ACTIONS = ["*провёл рукой по шее*", "*притянул ближе*", "*обнял крепче*"]
-NSFW_SOUNDS = ["~ах", "~мх", "~ммм", "~оох"]
-
-# Функция для отправки запроса к OpenAI API
-def get_openai_response(user_message, mode):
-    try:
-        # URL и данные для запроса
-        url = "https://api.openai.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        }
-
-        # Системное описание на основе режима
-        if mode == "safe":
-            system_message = (
-                "Ты — друг пользователя. Общайся в безопасной дружеской форме, добавляй действия (например, *улыбнулся*) и звуки (например, ~мм)."
+@bot.inline_handler(func=lambda query: True)
+def inline_query(inline_query):
+    query = inline_query.query
+    if not query:
+        return
+    search_results = search_fandom(query)[:10]
+    results = []
+    for idx, res in enumerate(search_results):
+        results.append(
+            telebot.types.InlineQueryResultArticle(
+                id=str(idx),
+                title=res['title'],
+                description=res['description'],
+                input_message_content=telebot.types.InputTextMessageContent(
+                    message_text=f"<b>{res['title']}</b>\n{res['url']}",
+                    parse_mode='HTML'
+                )
             )
-        else:
-            system_message = (
-                "Ты общаешься в 18+ режиме. Ты можешь добавлять лёгкие намёки, флирт и описывать действия интимного характера."
-            )
-
-        data = {
-            "model": "gpt-3.5-turbo",
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message},
-            ],
-            "temperature": 0.8,
-        }
-
-        # Запрос к API
-        response = requests.post(url, headers=headers, json=data)
-        response.raise_for_status()  # Проверка на ошибки
-
-        # Обработка ответа
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
-    except Exception as e:
-        logging.error(f"Ошибка при запросе к OpenAI: {e}")
-        return "Что-то пошло не так. Попробуй снова!"
-
-# Команда /start
-@dp.message_handler(commands=["start"])
-async def start_command(message: types.Message):
-    user_modes[message.from_user.id] = "safe"  # По умолчанию безопасный режим
-    await message.reply(
-        "Привет! Я могу общаться в безопасном или 18+ режиме. Напиши /mode, чтобы выбрать режим."
-    )
-
-# Команда /mode для смены режима
-@dp.message_handler(commands=["mode"])
-async def mode_command(message: types.Message):
-    user_id = message.from_user.id
-    current_mode = user_modes.get(user_id, "safe")
-
-    if current_mode == "safe":
-        user_modes[user_id] = "nsfw"
-        await message.reply(
-            "Переключился в 18+ режим. Теперь общение будет более интимным."
         )
-    else:
-        user_modes[user_id] = "safe"
-        await message.reply("Переключился в безопасный режим. Всё будет строго дружески.")
+    try:
+        bot.answer_inline_query(inline_query.id, results)
+    except Exception as e:
+        print(e)
 
-# Обработка всех остальных сообщений
-@dp.message_handler()
-async def handle_message(message: types.Message):
-    user_id = message.from_user.id
-    mode = user_modes.get(user_id, "safe")
-
-    # Выбор действий и звуков на основе режима
-    actions = SAFE_ACTIONS if mode == "safe" else NSFW_ACTIONS
-    sounds = SAFE_SOUNDS if mode == "safe" else NSFW_SOUNDS
-
-    # Генерация ответа от OpenAI
-    user_message = message.text
-    gpt_response = get_openai_response(user_message, mode)
-
-    # Добавление случайного действия или звука
-    random_element = random.choice(actions + sounds)
-    final_response = f"{gpt_response} {random_element}"
-
-    # Ответ пользователю
-    await message.reply(final_response)
-
-if __name__ == "__main__":
-    executor.start_polling(dp, skip_updates=True)
-    
+if __name__ == '__main__':
+    bot.infinity_polling()

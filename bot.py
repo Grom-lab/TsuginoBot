@@ -1,40 +1,41 @@
 import os
-import requests
+from openai import OpenAI
 from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, MessageHandler, filters, CommandHandler
 
 # Конфигурация
-TELEGRAM_TOKEN = "7124983842:AAGQKCh2vAEmaEu31oFMGy_gppcRx9PfX04"
 DEEPSEEK_API_KEY = "sk-bfd246006e9e41f48d7edab4c0396c8b"
-DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
+TELEGRAM_TOKEN = "7124983842:AAGQKCh2vAEmaEu31oFMGy_gppcRx9PfX04"
+DEEPSEEK_MODEL = "deepseek-chat"
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Привет! Я бот с интеграцией Deepseek. Задайте мне вопрос!')
+# Инициализация клиента DeepSeek
+client = OpenAI(
+    api_key=DEEPSEEK_API_KEY,
+    base_url="https://api.deepseek.com"
+)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_message = update.message.text
-    
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {DEEPSEEK_API_KEY}"
-    }
-    
-    payload = {
-        "model": "deepseek-chat",
-        "messages": [
-            {"role": "user", "content": user_message}
-        ],
-        "temperature": 0.7
-    }
-    
+async def start(update: Update, context):
+    await update.message.reply_text("Привет! Я бот с интеллектом DeepSeek. Задайте мне любой вопрос!")
+
+async def handle_message(update: Update, context):
     try:
-        response = requests.post(DEEPSEEK_API_URL, json=payload, headers=headers)
-        response.raise_for_status()
-        answer = response.json()['choices'][0]['message']['content']
+        user_message = update.message.text
+        
+        response = client.chat.completions.create(
+            model=DEEPSEEK_MODEL,
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant"},
+                {"role": "user", "content": user_message},
+            ],
+            stream=False
+        )
+        
+        bot_response = response.choices[0].message.content
+        await update.message.reply_text(bot_response)
+        
     except Exception as e:
-        answer = f"Ошибка при обработке запроса: {str(e)}"
-    
-    await update.message.reply_text(answer)
+        print(f"Ошибка: {e}")
+        await update.message.reply_text("Произошла ошибка при обработке запроса")
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -42,6 +43,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
+    print("Бот запущен...")
     app.run_polling()
 
 if __name__ == "__main__":

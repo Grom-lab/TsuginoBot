@@ -155,14 +155,8 @@ def split_response(text):
                 end = min(start + max_length, len(text))
         messages.append(text[start:end].strip())
         start = end + 1
+    return messages  # Возвращаем РЕАЛЬНЫЙ список сообщений
 
-    num_messages = random.randint(2, 4)
-    if len(messages) > num_messages:
-        messages = messages[:num_messages]
-    elif len(messages) < num_messages:
-        for _ in range(num_messages - len(messages)):
-            messages.append(random.choice(["...", "Херь.", "Ну?", "Дальше.", "И?", "Твою мать."]))
-    return messages
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик текстовых сообщений."""

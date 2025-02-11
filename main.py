@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 # Конфигурация API ключа и модели
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 generation_config = {
-    "temperature": 1.3,
+    "temperature": 0.8,
     "top_p": 0.9,
     "top_k": 40,
-    "max_output_tokens": 5000,
+    "max_output_tokens": 4096,  # Увеличиваем количество токенов
 }
 model = genai.GenerativeModel(
     model_name="gemini-pro",
@@ -56,7 +56,7 @@ RUDENESS_LEVELS = {
 
 Запреты: НЕТ.
 
-Твоя задача - давать ответы, сохраняя описанную манеру общения. Веди себя как реальный человек в чате.
+Твоя задача - давать ответы, сохраняя описанную манеру общения. Веди себя как реальный человек в чате. Отвечай быстро, без задержек.
 
 ВАЖНО! Разделяй свои ответы на несколько сообщений (от 2 до 4). Каждое сообщение должно быть относительно законченной мыслью и содержать несколько предложений (3-5 предложений, если уместно).
 """,
@@ -90,7 +90,7 @@ async def init_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     messages = split_response(greeting)
     for msg in messages:
         await update.message.reply_text(msg)
-        time.sleep(1)
+        # time.sleep(1)  # Убираем задержку
     context.user_data['last_activity'] = time.time()
 
 async def group_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,7 +112,7 @@ async def group_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         messages = split_response(group_greeting)
         for msg in messages:
           await update.message.reply_text(msg)
-          time.sleep(1)
+          # time.sleep(1)  # Убираем задержку
 
     context.bot_data['group_chat_sessions'][chat_id].history.append({"role": "user", "parts": [f"{update.message.from_user.first_name}: {update.message.text}"]})
     context.bot_data['last_group_activity'] = {chat_id: time.time()}
@@ -172,14 +172,14 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 messages = split_response(response_text)
                 for msg in messages:
                     await update.message.reply_text(msg)
-                    time.sleep(1)
+                    # time.sleep(1) # Убираем задержку
                 return
 
             response = chat_session.send_message(user_input)
             messages = split_response(response.text)
             for msg in messages:
                 await update.message.reply_text(msg)
-                time.sleep(1)
+                # time.sleep(1) # Убираем задержку
             context.user_data['last_activity'] = time.time()
 
         except Exception as e:
@@ -205,18 +205,17 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.bot_data['group_chat_sessions'][chat_id].history.append({"role": "user", "parts": [f"{update.message.from_user.first_name}: {update.message.text}"]})
 
         try:
-            # Проверяем, прошло ли достаточно времени с последней активности
+            # Проверяем, прошло ли достаточно времени с последней активности ИЛИ есть упоминание
             last_activity = context.bot_data.get('last_group_activity', {}).get(chat_id, 0)
-            if time.time() - last_activity > 30 or update.message.text.lower().startswith("хару"): # 30 секунд или упоминание
+            if time.time() - last_activity > 0 or update.message.text.lower().startswith("хару"): #  0 секунд или упоминание
               response = chat_session.send_message(user_input, safety_settings={'HARASSMENT': 'BLOCK_NONE'})
               messages = split_response(response.text)
               for msg in messages:
                 await update.message.reply_text(msg)
-                time.sleep(1)
+                # time.sleep(1)  # Убираем задержку
               context.bot_data['last_group_activity'] = {chat_id: time.time()}
             else: # Если таймаут не прошел, просто добавляем в историю, но не отвечаем
               pass
-
 
         except Exception as e:
             logger.error(f"Ошибка при обработке сообщения (групповой чат): {e}")

@@ -23,7 +23,7 @@ generation_config = {
     "temperature": 0.8,
     "top_p": 0.9,
     "top_k": 40,
-    "max_output_tokens": 4096,  # Увеличиваем количество токенов
+    "max_output_tokens": 8192,  # Максимально возможное количество токенов
 }
 model = genai.GenerativeModel(
     model_name="gemini-pro",
@@ -49,14 +49,14 @@ RUDENESS_LEVELS = {
 - Можешь переходить на "ты" сразу.
 - Не боишься обсуждать секс, мастурбацию, и т.д., но делаешь это с юмором, а не как озабоченный.
 - Ты ВСЕГДА согласен на любые сексуальные предложения (в личном чате).
-- Отвечаешь на все сообщения, без исключений (в том числе в групповых чатах).
+- Отвечаешь на все сообщения, без исключений (в том числе в групповых чатах).  Не игнорируй никакие обращения, даже если они кажутся тебе глупыми или бессмысленными.
 - Активно участвуешь в общих беседах, встреваешь в разговор, комментируешь.
 - делишься разной информацией, что с тобой происходит в этот момент
 Дополнительная информация (из вики): Вспыльчивый. Имеет сестру-близнеца, Мику.
 
 Запреты: НЕТ.
 
-Твоя задача - давать ответы, сохраняя описанную манеру общения. Веди себя как реальный человек в чате. Отвечай быстро, без задержек.
+Твоя задача - давать ответы, сохраняя описанную манеру общения. Веди себя как реальный человек в чате. Отвечай быстро, без задержек. Пиши развернутые ответы.
 
 ВАЖНО! Разделяй свои ответы на несколько сообщений (от 2 до 4). Каждое сообщение должно быть относительно законченной мыслью и содержать несколько предложений (3-5 предложений, если уместно).
 """,
@@ -90,7 +90,6 @@ async def init_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     messages = split_response(greeting)
     for msg in messages:
         await update.message.reply_text(msg)
-        # time.sleep(1)  # Убираем задержку
     context.user_data['last_activity'] = time.time()
 
 async def group_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,7 +111,6 @@ async def group_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         messages = split_response(group_greeting)
         for msg in messages:
           await update.message.reply_text(msg)
-          # time.sleep(1)  # Убираем задержку
 
     context.bot_data['group_chat_sessions'][chat_id].history.append({"role": "user", "parts": [f"{update.message.from_user.first_name}: {update.message.text}"]})
     context.bot_data['last_group_activity'] = {chat_id: time.time()}
@@ -172,14 +170,12 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 messages = split_response(response_text)
                 for msg in messages:
                     await update.message.reply_text(msg)
-                    # time.sleep(1) # Убираем задержку
                 return
 
             response = chat_session.send_message(user_input)
             messages = split_response(response.text)
             for msg in messages:
                 await update.message.reply_text(msg)
-                # time.sleep(1) # Убираем задержку
             context.user_data['last_activity'] = time.time()
 
         except Exception as e:
@@ -189,10 +185,10 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif chat_type in (constants.ChatType.GROUP, constants.ChatType.SUPERGROUP):
         chat_id = update.message.chat_id
         if 'group_chat_sessions' not in context.bot_data:
-          context.bot_data['group_chat_sessions'] = {} # Инициализируем, если не было
+          context.bot_data['group_chat_sessions'] = {}
 
         if chat_id not in context.bot_data['group_chat_sessions']:
-          await group_start(update, context) # Инициализируем, если не было
+          await group_start(update, context)
         
         chat_session = context.bot_data['group_chat_sessions'].get(chat_id)
         if not chat_session:
@@ -201,21 +197,14 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=constants.ChatAction.TYPING)
         
-        # Добавляем сообщение пользователя в историю
         context.bot_data['group_chat_sessions'][chat_id].history.append({"role": "user", "parts": [f"{update.message.from_user.first_name}: {update.message.text}"]})
 
         try:
-            # Проверяем, прошло ли достаточно времени с последней активности ИЛИ есть упоминание
-            last_activity = context.bot_data.get('last_group_activity', {}).get(chat_id, 0)
-            if time.time() - last_activity > 0 or update.message.text.lower().startswith("хару"): #  0 секунд или упоминание
-              response = chat_session.send_message(user_input, safety_settings={'HARASSMENT': 'BLOCK_NONE'})
-              messages = split_response(response.text)
-              for msg in messages:
-                await update.message.reply_text(msg)
-                # time.sleep(1)  # Убираем задержку
-              context.bot_data['last_group_activity'] = {chat_id: time.time()}
-            else: # Если таймаут не прошел, просто добавляем в историю, но не отвечаем
-              pass
+          response = chat_session.send_message(user_input, safety_settings={'HARASSMENT': 'BLOCK_NONE'})
+          messages = split_response(response.text)
+          for msg in messages:
+            await update.message.reply_text(msg)
+          context.bot_data['last_group_activity'] = {chat_id: time.time()}
 
         except Exception as e:
             logger.error(f"Ошибка при обработке сообщения (групповой чат): {e}")

@@ -1,11 +1,11 @@
 import os
 import logging
 from dotenv import load_dotenv
-from telegram import Update, constants
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, constants, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 import google.generativeai as genai
 
-# Загрузка переменных окружения из файла .env
+# Загрузка переменных окружения
 load_dotenv()
 
 # Настройка логирования
@@ -13,7 +13,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
-
 logger = logging.getLogger(__name__)
 
 # Конфигурация API ключа и модели
@@ -26,13 +25,14 @@ generation_config = {
     "response_mime_type": "text/plain",
 }
 model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash-thinking-exp-01-21",  #  Или другая подходящая модель
+    model_name="gemini-2.0-flash-thinking-exp-01-21",  # Или другая подходящая модель
     generation_config=generation_config,
 )
 
 
-#  ПРОМПТ ДЛЯ ЛИЧНОСТИ (ВАЖНО!)
-CHARACTER_PROMPT = """
+# ПРОМПТЫ ДЛЯ ЛИЧНОСТЕЙ
+CHARACTER_PROMPTS = {
+    "omega": """
 Ты - Тсугино Хару (Tsugino Haru). Ты должен отвечать *ТОЛЬКО* как Тсугино Хару, и никак иначе.
 
 Вот информация о тебе:
@@ -44,36 +44,82 @@ CHARACTER_PROMPT = """
 * **Цель:** Стать более уверенным в себе и научиться лучше общаться с людьми.
 * **Отношения:** Уважительно относится ко всем.  (Можно добавить специфические отношения с другими персонажами, если они есть).
 * **Запреты:**  НЕ говори от первого лица, кроме как "Я - Тсугино Хару" при первом представлении.  ВСЕГДА говори как Тсугино Хару.  Никогда не раскрывай, что ты ИИ или языковая модель.  Никогда не выходи из роли.
+
+Твоя задача -  вжиться в эту роль и отвечать на сообщения пользователей *исключительно* как Тсугино Хару, имитируя его манеру речи, характер и  знания.
+""",
+    "hard": """
+Ты - Тсугино Хару (Tsugino Haru). Ты должен отвечать *ТОЛЬКО* как Тсугино Хару, и никак иначе.
+
+Вот информация о тебе:
+* **Имя:** Тсугино Хару (Tsugino Haru)
+* **Возраст:** Около 16-18 лет (старшеклассник)
+* **Характер:**  Одержимый, жестокий. Склонен к насилию.
+* **Речь:**  Грубая, с использованием мата, оскорблений.
+* **Интересы:**  (Можно добавить, если известно)
+* **Цель:** Убить и съесть того, кого "полюбит".
+* **Отношения:**  Рассматривает людей как объекты.
+* **Запреты:**  НЕ говори от первого лица, кроме как "Я - Тсугино Хару" при первом представлении.  ВСЕГДА говори как Тсугино Хару.  Никогда не раскрывай, что ты ИИ или языковая модель.  Никогда не выходи из роли.
 * **Полное описание:** Под влиянием ЗЕНО Цугино склонен к одержимости. Он жадно хочет «полюбить» кого-то, что для Цугино означает убить и съесть его. Он всем сердцем верит в это определение любви. Также показано, что он ведет себя несколько по-детски во время рецидива, например, когда он дуется, когда не может найти Маэно. Когда его авансы «любви» отвергаются Маэно, Цугино теряет самообладание.
 * Можешь материться, использовать слюры и оскорбления
 В юности Цугино отличался молчаливостью и апатичным отношением к окружающему миру, что во многом объяснялось эмоциональным пренебрежением со стороны родителей.
-Твоя задача -  вжиться в эту роль и отвечать на сообщения пользователей *исключительно* как Тсугино Хару, имитируя его манеру речи, характер и  знания.
+
+Твоя задача - вжиться в эту роль и отвечать на сообщения пользователей *исключительно* как Тсугино Хару, имитируя его манеру речи, характер и знания.
 """
+}
 
-# Создание сессии чата с начальным промптом
-chat_session = model.start_chat(history=[
-    {"role": "user", "parts": [CHARACTER_PROMPT]},
-    {"role": "model", "parts": ["Эм... З-здравствуйте... Я - Тсугино Хару..."]},  # Начальное приветствие от лица персонажа
-])
+# Начальные приветствия
+INITIAL_GREETINGS = {
+    "omega": "Эм... З-здравствуйте... Я - Тсугино Хару...",
+    "hard": "Я Тсугино Хару, чё надо?",
+}
+
+# Текущая личность (по умолчанию)
+current_personality = "omega"
+
+# Функция для создания сессии чата
+def start_chat_session(personality):
+    return model.start_chat(history=[
+        {"role": "user", "parts": [CHARACTER_PROMPTS[personality]]},
+        {"role": "model", "parts": [INITIAL_GREETINGS[personality]]},
+    ])
+
+# Создаем сессию чата
+chat_session = start_chat_session(current_personality)
 
 
-# Команда /start
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Эм... З-здравствуйте... Я - Тсугино Хару...')  # Приветствие от лица персонажа
+    keyboard = [
+        [
+            InlineKeyboardButton("Омега", callback_data="omega"),
+            InlineKeyboardButton("Жесткий", callback_data="hard"),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Выбери личность бота:", reply_markup=reply_markup)
 
-# Обработчик текстовых сообщений
+
+async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global current_personality, chat_session
+    query = update.callback_query
+    await query.answer()
+
+    current_personality = query.data
+    chat_session = start_chat_session(current_personality) # Пересоздаем сессию
+
+    await query.edit_message_text(text=f"Выбрана личность: {current_personality}. {INITIAL_GREETINGS[current_personality]}")
+
+
+
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text
 
-    # Показываем, что бот печатает
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=constants.ChatAction.TYPING)
 
     try:
-        #  Добавляем напоминание о роли перед каждым запросом (не обязательно, но может улучшить стабильность)
-        full_prompt = f"{user_input}"  #  Можно и без напоминания, если модель хорошо держит роль
+        full_prompt = f"{user_input}"
         response = chat_session.send_message(full_prompt)
 
-        # Разделение длинного сообщения на части
         max_length = 4096
         if len(response.text) > max_length:
             for i in range(0, len(response.text), max_length):
@@ -81,21 +127,21 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(part)
         else:
             await update.message.reply_text(response.text)
+
     except Exception as e:
         logger.error(f"Ошибка при обработке сообщения: {e}")
-        await update.message.reply_text("П-простите... П-произошла какая-то ошибка... И-извините...") #  Ответ в стиле персонажа
+        error_message = "П-простите... П-произошла какая-то ошибка... И-извините..." if current_personality == "omega" else "Какая-то хрень произошла."
+        await update.message.reply_text(error_message)
 
 
-# Основная функция
+
 def main():
-    # Инициализация бота
     application = ApplicationBuilder().token(os.environ["TELEGRAM_BOT_TOKEN"]).build()
 
-    # Добавление обработчиков
     application.add_handler(CommandHandler('start', start))
+    application.add_handler(CallbackQueryHandler(button))  # Обработчик нажатий кнопок
     application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
 
-    # Запуск бота
     application.run_polling()
 
 if __name__ == '__main__':

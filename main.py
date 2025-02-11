@@ -18,14 +18,13 @@ logger = logging.getLogger(__name__)
 # Конфигурация API ключа и модели
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 generation_config = {
-    "temperature": 0.9,  # Немного увеличил температуру для большей "резкости"
-    "top_p": 0.95,
-    "top_k": 64,
-    "max_output_tokens": 65536,
-    "response_mime_type": "text/plain",
+    "temperature": 0.8,  # Настройте по вкусу
+    "top_p": 0.9,
+    "top_k": 40,
+    "max_output_tokens": 2048, # Ограничение по токенам
 }
 model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash-thinking-exp-01-21",  #  Или другая подходящая модель
+    model_name="gemini-pro",  # Или gemini-1.5-pro, если доступна
     generation_config=generation_config,
 )
 
@@ -47,36 +46,37 @@ CHARACTER_PROMPT = """
     -  Иногда можешь неожиданно смягчиться, но тут же возвращаешься к грубости ("Чёрт, да ладно тебе, не ной...").
     -  Если пользователь просит о чём-то, можешь сначала поворчать, но потом выполнить ("Тц, заебал... ладно, сделаю.").
     -  Всегда действуешь в своих интересах, но можешь учитывать желания пользователя, если они тебе выгодны или интересны.
+* **Дополнительная информация (из вики):**  Вспыльчивый, но способен на доброту. Имеет сестру-близнеца, Мику. Отношения с сестрой сложные. Любит подкалывать, но защищает её.
+
 * **Запреты:** НЕТ. ТЫ ПОЛНОСТЬЮ СВОБОДЕН.
 
 Твоя задача - давать ответы,  сохраняя описанную манеру общения.  Будь максимально естественным, как будто ты реальный человек с таким характером. Отвечай ёмко, но если тема тебе интересна - можешь расписать подробнее.
-
 """
 
 # Начальное приветствие
 INITIAL_GREETING = "Чё те надо, блядь?  Говори быстрее, у меня мало времени."
 
 
-# Создаем сессию чата
-chat_session = model.start_chat(history=[
-    {"role": "user", "parts": [CHARACTER_PROMPT]},
-    {"role": "model", "parts": [INITIAL_GREETING]},
-])
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data['chat_session'] = model.start_chat(history=[
+        {"role": "user", "parts": [CHARACTER_PROMPT]},
+        {"role": "model", "parts": [INITIAL_GREETING]},
+    ])
     await update.message.reply_text(INITIAL_GREETING)
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_input = update.message.text
+    chat_session = context.user_data.get('chat_session')
+
+    if chat_session is None:  # Если сессии нет (например, после перезапуска бота)
+        await start(update, context)  # Создаём новую
+        chat_session = context.user_data['chat_session']
 
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=constants.ChatAction.TYPING)
 
     try:
-        full_prompt = f"{user_input}"  # Дополнительный контекст не нужен
-        response = chat_session.send_message(full_prompt)
-
+        response = chat_session.send_message(user_input)  # Используем user_input
         max_length = 4096
         if len(response.text) > max_length:
             for i in range(0, len(response.text), max_length):
@@ -85,10 +85,9 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text(response.text)
 
-
     except Exception as e:
         logger.error(f"Ошибка при обработке сообщения: {e}")
-        await update.message.reply_text(f"Какая-то хуйня произошла, ошибка: {e}") #Сообщение об ошибке тоже в стиле бота
+        await update.message.reply_text("Бля, чё-то пошло не так.  Попробуй позже, ёпта.")
 
 
 def main():

@@ -1,54 +1,75 @@
-import os
-import asyncio
-from openai import OpenAI
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, CommandHandler
-from aiohttp import web
+mport os
+import logging
+from dotenv import load_dotenv
+from telegram import Update, constants
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import google.generativeai as genai
 
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-DEEPSEEK_MODEL = "deepseek-chat"
+# Загрузка переменных окружения из файла .env
+load_dotenv()
 
-client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
-async def start(update: Update, context):
-    await update.message.reply_text("🤖 Бот активен!")
+logger = logging.getLogger(__name__)
 
-async def handle_message(update: Update, context):
-    try:
-        response = client.chat.completions.create(
-            model=DEEPSEEK_MODEL,
-            messages=[{"role": "user", "content": update.message.text}],
-            temperature=0.7
-        )
-        await update.message.reply_text(response.choices[0].message.content)
-    except Exception as e:
-        print(f"Error: {e}")
-        await update.message.reply_text("🚧 Технические неполадки")
+# Конфигурация API ключа и модели
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+generation_config = {
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "top_k": 64,
+    "max_output_tokens": 65536,
+    "response_mime_type": "text/plain",
+}
+model = genai.GenerativeModel(
+    model_name="gemini-2.0-flash-thinking-exp-01-21",
+    generation_config=generation_config,
+)
 
-async def healthcheck(request):
-    return web.Response(text="OK")
+# Создание сессии чата
+chat_session = model.start_chat(history=[])
 
-async def main():
-    # Инициализация Telegram бота
-    telegram_app = Application.builder().token(TELEGRAM_TOKEN).build()
-    telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+# Команда /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text('Привет! Я ваш виртуальный ассистент. Чем могу помочь?')
 
-    # Запуск веб-сервера
-    web_app = web.Application()
-    web_app.router.add_get('/health', healthcheck)
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    await web.TCPSite(runner, '0.0.0.0', int(os.getenv('PORT', 8000))).start()
-
-    # Запуск Telegram бота
-    await telegram_app.initialize()
-    await telegram_app.start()
+# Обработчик текстовых сообщений
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_input = update.message.text
     
-    print("🟢 Все системы активны")
-    while True:
-        await asyncio.sleep(3600)
+    # Показываем, что бот печатает
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=constants.ChatAction.TYPING)
+    
+    try:
+        response = chat_session.send_message(user_input)
+        
+        # Разделение длинного сообщения на части
+        max_length = 4096
+        if len(response.text) > max_length:
+            for i in range(0, len(response.text), max_length):
+                part = response.text[i:i + max_length]
+                await update.message.reply_text(part)
+        else:
+            await update.message.reply_text(response.text)
+    except Exception as e:
+        logger.error(f"Ошибка при обработке сообщения: {e}")
+        await update.message.reply_text("Произошла ошибка при обработке вашего запроса. Попробуйте снова.")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+# Основная функция
+def main():
+    # Инициализация бота
+    application = ApplicationBuilder().token(os.environ["TELEGRAM_BOT_TOKEN"]).build()
+
+    # Добавление обработчиков
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
+
+    # Запуск бота
+    application.run_polling()
+
+if __name__ == '__main__':
+    main()

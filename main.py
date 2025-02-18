@@ -4,7 +4,13 @@ from dotenv import load_dotenv
 from telegram import Update, constants
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import google.generativeai as genai
-import telebot import requests BOT_TOKEN = '6968815403:AAGYmv2BGk5906XCVYP5Xy-Fkwxks-gzw0s' API_KEY = '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' bot = telebot.TeleBot(BOT_TOKEN)
+import telebot
+import requests
+
+BOT_TOKEN = '6968815403:AAGYmv2BGk5906XCVYP5Xy-Fkwxks-gzw0s'
+API_KEY = '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'
+
+bot = telebot.TeleBot(BOT_TOKEN)
 # Загрузка переменных окружения из файла .env
 load_dotenv()
 

@@ -23,7 +23,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Конфигурация API ключа и модели
-genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+genai.configure(api_key=os.environ["API_KEY"])
 generation_config = {
     "temperature": 0.7,
     "top_p": 0.95,

@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 from telegram import Update, constants
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import google.generativeai as genai
-
+import telebot import requests BOT_TOKEN = 'ВАШ_ТОКЕН_ТЕЛЕГРАМ' API_KEY = 'ВАШ_API_КЛЮЧ_ИИ' bot = telebot.TeleBot(BOT_TOKEN)
 # Загрузка переменных окружения из файла .env
 load_dotenv()
 

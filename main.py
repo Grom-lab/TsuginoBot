@@ -9,7 +9,7 @@ TELEGRAM_TOKEN = os.getenv("6968815403:AAGYmv2BGk5906XCVYP5Xy-Fkwxks-gzw0s")
 # OpenRoute API ключ
 OPENROUTE_API_KEY = "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"
 OPENROUTE_API_URL = "https://openrouter.ai/api/v1/chat/completions"
-MODEL = "dolphin3.0-r1-mistral-24b:free"
+MODEL = "dolphin3.0-r1-mistral-24b"
 
 # Системный промпт для Тсугино Хару
 SYSTEM_PROMPT = """

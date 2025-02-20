@@ -55,7 +55,7 @@ def main():
     # Включение логирования для отслеживания ошибок
     logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-    TELEGRAM_TOKEN = 'ВАШ_ТОКЕН_БОТА'
+    TELEGRAM_TOKEN = '6968815403:AAGYmv2BGk5906XCVYP5Xy-Fkwxks-gzw0s'
 
     # Инициализация приложения
     application = Application.builder().token(TELEGRAM_TOKEN).build()

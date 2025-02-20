@@ -1,78 +1,68 @@
-import os
 import logging
-from dotenv import load_dotenv
-from telegram import Update, constants
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-import google.generativeai as genai
-import telebot
-import requests
+import re
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from openai import OpenAI
 
-BOT_TOKEN = '6968815403:AAGYmv2BGk5906XCVYP5Xy-Fkwxks-gzw0s'
-API_KEY = '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'
+# Ваш ключ API для OpenRouter
+OPENROUTER_API_KEY = 'ВАШ_API_КЛЮЧ_OPENROUTER'
 
-bot = telebot.TeleBot(BOT_TOKEN)
-# Загрузка переменных окружения из файла .env
-load_dotenv()
+# Инициализация клиента OpenRouter
+client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)
 
-# Настройка логирования
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+async def start(update: Update, context: CallbackContext):
+    # Отправка приветственного сообщения при старте бота.
+    await update.message.reply_text("Привет! Напиши мне что-нибудь, и я постараюсь ответить.", parse_mode='Markdown')
 
-logger = logging.getLogger(__name__)
+async def handle_message(update: Update, context: CallbackContext):
+    # Обработка сообщений от пользователей и взаимодействие с нейросетью.
+    user_message = update.message.text  # Получаем текст от пользователя
+    logging.info(f"Получено сообщение от пользователя: {user_message}")
 
-# Конфигурация API ключа и модели
-genai.configure(api_key=os.environ["API_KEY"])
-generation_config = {
-    "temperature": 0.7,
-    "top_p": 0.95,
-    "top_k": 64,
-    "max_output_tokens": 65536,
-    "response_mime_type": "text/plain",
-}
-model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash-thinking-exp-01-21",
-    generation_config=generation_config,
-)
-
-# Создание сессии чата
-chat_session = model.start_chat(history=[])
-
-# Команда /start
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Привет! Я ваш виртуальный ассистент. Чем могу помочь?')
-
-# Обработчик текстовых сообщений
-async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = update.message.text
-    
-    # Показываем, что бот печатает
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=constants.ChatAction.TYPING)
-    
     try:
-        response = chat_session.send_message(user_input)
-        
-        # Разделение длинного сообщения на части
-        max_length = 4096
-        if len(response.text) > max_length:
-            for i in range(0, len(response.text), max_length):
-                part = response.text[i:i + max_length]
-                await update.message.reply_text(part)
+        # Отправка запроса к нейросети
+        completion = client.chat.completions.create(
+            model="deepseek/deepseek-r1:free", # Модель которую будет использоваться
+            messages=[{"role": "user", "content": user_message}]
+        )
+
+        # Логирование ответа от нейросети
+        logging.info(f"Ответ от нейросети: {completion}")
+
+        # Проверка и обработка ответа
+        if completion and hasattr(completion, 'choices') and completion.choices:
+            choice = completion.choices[0]
+            content = choice.message.content
+            cleaned_content = re.sub(r'<.*?>', '', content).strip()  # Убираем теги
+
+            if cleaned_content:
+                bot_response = f"*Ответ от нейросети:*\n\n{cleaned_content}"
+            else:
+                bot_response = "*Ответ от нейросети не содержит нужной информации.*"
+                logging.error("Ответ от нейросети пустой.")
         else:
-            await update.message.reply_text(response.text)
+            bot_response = "*Извините, я не получил корректный ответ от нейросети. Пожалуйста, попробуйте позже.*"
+
     except Exception as e:
-        logger.error(f"Ошибка при обработке сообщения: {e}")
-        await update.message.reply_text("Произошла ошибка при обработке вашего запроса. Попробуйте снова.")
+        bot_response = f"*Произошла ошибка:* {str(e)}"
+        logging.error(f"Ошибка при обработке сообщения: {str(e)}")
 
-# Основная функция
+    logging.info(f"Отправка сообщения пользователю: {bot_response}")
+    await update.message.reply_text(bot_response, parse_mode='Markdown')
+
 def main():
-    # Инициализация бота
-    application = ApplicationBuilder().token(os.environ["TELEGRAM_BOT_TOKEN"]).build()
+    """Основная функция для запуска бота."""
+    # Включение логирования для отслеживания ошибок
+    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-    # Добавление обработчиков
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), echo))
+    TELEGRAM_TOKEN = 'ВАШ_ТОКЕН_БОТА'
+
+    # Инициализация приложения
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    # Обработчики команд и сообщений
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Запуск бота
     application.run_polling()

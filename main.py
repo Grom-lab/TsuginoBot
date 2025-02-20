@@ -5,7 +5,7 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from openai import OpenAI
 
 # Ваш ключ API для OpenRouter
-OPENROUTER_API_KEY = 'ВАШ_API_КЛЮЧ_OPENROUTER'
+OPENROUTER_API_KEY = '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'
 
 # Инициализация клиента OpenRouter
 client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=OPENROUTER_API_KEY)

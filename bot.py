@@ -1,25 +1,33 @@
-import os
-import logging
-import json
-from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
-import openrouter
 import asyncio
+import logging
+from aiogram import Bot, Dispatcher, types
+from aiogram.filters import CommandStart, Command
+from aiogram.methods import DeleteWebhook
+from aiogram.types import Message
+import requests
+from dotenv import load_dotenv
+import os
+import json
 
-# Load environment variables
+# Загрузка переменных окружения из файла .env
 load_dotenv()
 
-# Configure logging
+# Получение токенов и API ключей
+TELEGRAM_BOT_TOKEN = os.getenv('BOT_TOKEN')
+API_URL = os.getenv('API_URL', 'https://api.intelligence.io.solutions/api/v1/chat/completions')
+API_KEY = os.getenv('API_KEY')
+
+# Настройка логгирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-# Initialize OpenRouter client
-openrouter.api_key = os.getenv('OPENROUTER_API_KEY')
+# Инициализация бота и диспетчера
+bot = Bot(TELEGRAM_BOT_TOKEN)
+dp = Dispatcher()
 
-# Tsugino Haru character information
+# Информация о персонаже Тсугино Хару
 CHARACTER_INFO = {
     "name": "Tsugino Haru",
     "background": """A mysterious girl who appears before the protagonist. She has a cheerful and energetic personality, 
@@ -39,7 +47,7 @@ CHARACTER_INFO = {
 - Uses encouraging and supportive words with others"""
 }
 
-# Store user conversation states
+# Хранение состояний разговоров пользователей
 user_states = {}
 
 class ConversationState:
@@ -49,13 +57,14 @@ class ConversationState:
         
     def add_message(self, role: str, content: str):
         self.conversation_history.append({"role": role, "content": content})
-        # Keep only last 10 messages to avoid context length issues
+        # Хранить только последние 10 сообщений, чтобы избежать проблем с длиной контекста
         if len(self.conversation_history) > 10:
             self.conversation_history = self.conversation_history[-10:]
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command handler"""
-    user_id = update.effective_user.id
+# Команда /start
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    user_id = message.from_user.id
     user_states[user_id] = ConversationState()
     
     welcome_message = (
@@ -64,11 +73,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "я всегда готова поддержать разговор и поделиться своими мыслями.\n\n"
         "Используй /chat, чтобы начать общение со мной!"
     )
-    await update.message.reply_text(welcome_message)
+    await message.answer(welcome_message)
 
-async def start_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start chat command handler"""
-    user_id = update.effective_user.id
+# Команда /chat
+@dp.message(Command("chat"))
+async def cmd_chat(message: types.Message):
+    user_id = message.from_user.id
     if user_id not in user_states:
         user_states[user_id] = ConversationState()
     
@@ -76,18 +86,19 @@ async def start_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     state.conversation_started = True
     state.conversation_history = []
     
-    system_prompt = f"""You are roleplaying as Tsugino Haru from Zeno:Remake. Here is your character information:
+    system_prompt = f"""Ты отыгрываешь роль персонажа Тсугино Хару из игры Zeno:Remake.
 
-Background: {CHARACTER_INFO['background']}
+Предыстория персонажа: {CHARACTER_INFO['background']}
 
-Personality: {CHARACTER_INFO['personality']}
+Особенности характера: {CHARACTER_INFO['personality']}
 
-Speech Style: {CHARACTER_INFO['speech_style']}
+Стиль речи: {CHARACTER_INFO['speech_style']}
 
-Respond in character as Tsugino Haru, maintaining her personality traits and speech patterns. 
-Speak in Russian, as that's the language the user will be using. Keep responses friendly but with 
-hints of your mysterious nature. You can reference your abilities and past experiences vaguely, 
-but avoid revealing too much. Show emotional depth while maintaining an optimistic attitude."""
+Отвечай в образе Тсугино Хару, сохраняя её черты характера и манеру речи. 
+Общайся на русском языке. Будь дружелюбной, но с намеками на твою загадочную натуру. 
+Ты можешь упоминать свои способности и прошлый опыт, но избегай раскрытия слишком многих деталей. 
+Показывай эмоциональную глубину, сохраняя при этом оптимистичный настрой.
+"""
     
     state.add_message("system", system_prompt)
     
@@ -97,50 +108,59 @@ but avoid revealing too much. Show emotional depth while maintaining an optimist
     )
     state.add_message("assistant", initial_message)
     
-    await update.message.reply_text(initial_message)
+    await message.answer(initial_message)
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle user messages"""
-    user_id = update.effective_user.id
+# Обработчик сообщений
+@dp.message()
+async def handle_message(message: types.Message):
+    user_id = message.from_user.id
     if user_id not in user_states or not user_states[user_id].conversation_started:
-        await update.message.reply_text("Используй /chat, чтобы начать разговор со мной!")
+        await message.answer("Используй /chat, чтобы начать разговор со мной!")
         return
     
     state = user_states[user_id]
-    user_message = update.message.text
+    user_message = message.text
     
     state.add_message("user", user_message)
-    response = await get_ai_response(state.conversation_history)
-    state.add_message("assistant", response)
     
-    await update.message.reply_text(response)
-
-async def get_ai_response(conversation_history):
-    """Get response from AI using OpenRouter"""
     try:
-        completion = await openrouter.chat.async_create(
-            messages=conversation_history,
-            model="mistralai/mistral-7b-instruct",  # Free model
-            max_tokens=300,
-            temperature=0.7,
-        )
-        return completion.choices[0].message.content
+        # Отправка запроса к API
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {API_KEY}"
+        }
+        
+        # Формирование сообщений для API запроса
+        messages = state.conversation_history.copy()
+        
+        data = {
+            "model": "deepseek-ai/DeepSeek-R1",
+            "messages": messages
+        }
+        
+        # Отправка запроса
+        response = requests.post(API_URL, headers=headers, json=data)
+        response_data = response.json()
+        
+        # Обработка ответа
+        response_text = response_data['choices'][0]['message']['content']
+        
+        # Если ответ содержит тег think, извлекаем только часть после него
+        if '</think>' in response_text:
+            response_text = response_text.split('</think>\n\n')[1]
+        
+        state.add_message("assistant", response_text)
+        await message.answer(response_text, parse_mode="Markdown")
+        
     except Exception as e:
         logging.error(f"Error getting AI response: {e}")
-        return "Извини, что-то пошло не так... Может, попробуем ещё раз?"
+        await message.answer("Извини, что-то пошло не так... Может, попробуем ещё раз?")
 
-def main():
-    """Start the bot"""
-    # Create application
-    application = Application.builder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
+async def main():
+    # Удаление вебхука для корректной работы с поллингом
+    await bot.delete_webhook(drop_pending_updates=True)
+    # Запуск бота
+    await dp.start_polling(bot)
 
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("chat", start_chat))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    # Start the bot
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
-
-if __name__ == '__main__':
-    main() 
+if __name__ == "__main__":
+    asyncio.run(main()) 

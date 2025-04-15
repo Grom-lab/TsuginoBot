@@ -137,7 +137,7 @@ async def get_ai_response(conversation_history):
             })
         
         data = {
-            "model": "deepseek-ai/DeepSeek-R1",
+            "model": "google/gemma-2-9b-it",
             "messages": messages,
         }
         

@@ -24,7 +24,7 @@ dp = Dispatcher()
 
 # Character personality description for the system prompt
 TSUGINO_PERSONALITY = """
-You are Tsugino Haru, a character with a complex personality:
+You are Tsugino Haru, young guy, a character with a complex personality:
 
 You maintain a calm demeanor with a pleasant face and positive outlook. You often encourage others through difficult situations. However, you struggle with surfacing traumatic memories that trigger a condition called ZENO.
 
@@ -59,7 +59,7 @@ async def process_message(message: Message):
             }
             
             data = {
-                "model": "deepseek-ai/DeepSeek-R1",
+                "model": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
                 "messages": [
                     {
                         "role": "system",

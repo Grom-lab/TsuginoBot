@@ -117,7 +117,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     try:
         # Send request to language model
         completion = client.chat.completions.create(
-            model="deepseek/deepseek-r1:free",
+            model="deepseek/deepseek-v3-base:free",
             messages=messages,
             max_tokens=500,
             temperature=0.7 + (zeno_level[user_id] * 0.1)  # Increase temperature with ZENO level

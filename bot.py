@@ -8,6 +8,7 @@ import requests
 from dotenv import load_dotenv
 import os
 import json
+import time
 
 # Загрузка переменных окружения из файла .env
 load_dotenv()
@@ -98,6 +99,7 @@ async def cmd_chat(message: types.Message):
 Общайся на русском языке. Будь дружелюбной, но с намеками на твою загадочную натуру. 
 Ты можешь упоминать свои способности и прошлый опыт, но избегай раскрытия слишком многих деталей. 
 Показывай эмоциональную глубину, сохраняя при этом оптимистичный настрой.
+Отвечай кратко и лаконично, чтобы ответы генерировались быстрее.
 """
     
     state.add_message("system", system_prompt)
@@ -121,6 +123,9 @@ async def handle_message(message: types.Message):
     state = user_states[user_id]
     user_message = message.text
     
+    # Включаем индикатор печати
+    await bot.send_chat_action(message.chat.id, "typing")
+    
     state.add_message("user", user_message)
     
     try:
@@ -134,13 +139,23 @@ async def handle_message(message: types.Message):
         messages = state.conversation_history.copy()
         
         data = {
-            "model": "deepseek-ai/DeepSeek-R1",
-            "messages": messages
+            "model": "google/gemma-3-27b-it",  # Использование модели gemma-3-27b-it
+            "messages": messages,
+            "temperature": 0.7,  # Добавляем температуру для творческих ответов
+            "max_tokens": 250,   # Ограничиваем длину ответа для ускорения
+            "stream": False      # Отключаем потоковую передачу для ускорения
         }
+        
+        # Замер времени запроса для оптимизации
+        start_time = time.time()
         
         # Отправка запроса
         response = requests.post(API_URL, headers=headers, json=data)
         response_data = response.json()
+        
+        # Логирование времени выполнения запроса
+        elapsed_time = time.time() - start_time
+        logging.info(f"API response time: {elapsed_time:.2f} seconds")
         
         # Обработка ответа
         response_text = response_data['choices'][0]['message']['content']
@@ -148,6 +163,10 @@ async def handle_message(message: types.Message):
         # Если ответ содержит тег think, извлекаем только часть после него
         if '</think>' in response_text:
             response_text = response_text.split('</think>\n\n')[1]
+        
+        # Продолжаем показывать статус печатания для естественности
+        typing_delay = min(len(response_text) * 0.01, 3)  # Максимум 3 секунды
+        await asyncio.sleep(typing_delay)
         
         state.add_message("assistant", response_text)
         await message.answer(response_text, parse_mode="Markdown")

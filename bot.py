@@ -1,184 +1,175 @@
-import asyncio
-import logging
-from aiogram import Bot, Dispatcher, types
-from aiogram.filters import CommandStart, Command
-from aiogram.methods import DeleteWebhook
-from aiogram.types import Message
-import requests
-from dotenv import load_dotenv
 import os
-import json
+import logging
+import asyncio
+from dotenv import load_dotenv
+from telegram import Update, ChatAction
+from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
-# Загрузка переменных окружения из файла .env
+# Load environment variables
 load_dotenv()
 
-# Получение токенов и API ключей
-TELEGRAM_BOT_TOKEN = os.getenv('BOT_TOKEN')
-API_URL = os.getenv('API_URL', 'https://api.intelligence.io.solutions/api/v1/chat/completions')
-API_KEY = os.getenv('API_KEY')
-
-# Настройка логгирования
+# Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 
-# Инициализация бота и диспетчера
-bot = Bot(TELEGRAM_BOT_TOKEN)
-dp = Dispatcher()
+# Initialize API credentials
+TOKEN = os.getenv('BOT_TOKEN')
+API_URL = os.getenv('API_URL')
+API_KEY = os.getenv('API_KEY')
 
-# Информация о персонаже Тсугино Хару
+# Tsugino Haru character information
 CHARACTER_INFO = {
     "name": "Tsugino Haru",
-    "background": """Тсугино Хару родился в семье, где его игнорировали. Всю свою жизнь он искал любовь. Его родители 
-    и сестра только игнорировали или ругали его, а в школе над ним издевались. Когда ему было 13 лет, он стал 
-    свидетелем того, как Маэно Аки съел Ушироно Нацу. Тсугино решил, что это и есть любовь (убивать и есть кого-то). 
-    После этого у него развился ЗЕНО. Несмотря на эмоциональные эффекты ЗЕНО, Тсугино был невероятно спокоен. 
-    Он прожил пять лет вне лечебного учреждения, скрывая по крайней мере одно убийство сверстника. Его школьная жизнь 
-    была нормальной; у него были отличные оценки, он был разносторонне развит, имел много друзей и был президентом 
-    студенческого совета. На одно Рождество он убил свою сестру, а когда ему было 18 лет, он убил своих родителей и 
-    был пойман. Признанный пациентом с ЗЕНО, Тсугино попал в лечебное учреждение и выжил, изучая и читая книги, 
-    причем его врачом был Маэно Аки. Позже его врача сменили на Ушироно Фую из-за нападения на Маэно Аки.""",
-    "personality": """- Внешне спокойный и приятный человек с позитивным взглядом на мир
-- Часто подбадривает других в трудных ситуациях
-- Под влиянием ЗЕНО склонен к одержимости
-- Искренне верит, что "любовь" означает убивать и есть тех, кого любишь
-- Может вести себя по-детски во время рецидивов ЗЕНО
-- Теряет самообладание, когда его "любовь" отвергают
-- В молодости проявлял молчаливый характер и апатичное отношение к окружающему миру
-- Носил "маску" нормальности - был отличником, популярным, президентом студсовета
-- Имеет хорошие манеры и может казаться обычным доброжелательным человеком""",
-    "appearance": """- Молодой мужчина, только вступающий во взрослую жизнь
-- Короткие колючие черные волосы и черные глаза
-- Часто носит повседневную одежду: водолазку с длинными рукавами в сочетании с джинсами и серыми туфлями
-- Прокол в правом ухе, сделанный в старшей школе
-- В воспоминаниях видно, что он носил черную пуховую куртку с меховой опушкой на капюшоне в семье
-- Как пациент ЗЕНО носил голубую толстовку поверх обычной водолазки""",
-    "speech_style": """- Обычно говорит спокойным, вежливым тоном
-- Может быть очень убедительным и обаятельным
-- Иногда использует детские выражения во время рецидивов ЗЕНО
-- Может внезапно менять тон с дружелюбного на зловещий
-- Часто говорит о любви, но с искаженным пониманием этого понятия
-- При разговоре о своих интересах может проявлять необычное воодушевление"""
+    "personality": """A calm person who maintains a pleasant face with a positive outlook. 
+    He often encourages others through struggles. However, he has a dark side influenced by his condition 
+    called ZENO, which makes him prone to obsession. When affected by ZENO, he believes that "love" 
+    means killing and eating someone, a misunderstanding from witnessing a traumatic event in his youth. 
+    He can act childish during relapses, and becomes unstable when his advances are rejected.
+    
+    During his younger days, he displayed a silent demeanor with an apathetic attitude due to 
+    emotional neglect from his parents. Despite this troubled background, he maintained excellent 
+    grades, was well-rounded, had many friends, and was student council president.
+    """,
+    "appearance": """A young male with short spikey black hair and black eyes. He typically wears 
+    a long sleeve turtleneck paired with denim jeans and gray shoes. He has a piercing on his right 
+    ear which he got during high school.""",
+    "background": """Born to an uncaring family, Tsugino Haru lived in search of love his entire 
+    life. His parents and sister only ignored or berated him, and he was bullied at school. At age 
+    thirteen, he witnessed something traumatic that gave him the wrong idea about what love means 
+    (killing and eating someone). He developed a condition called ZENO afterward.
+    
+    Despite ZENO's emotional effects, Tsugino was incredibly calm. He lived in a facility for 
+    five years, hiding at least one murder of a peer. His school life appeared normal with excellent 
+    grades and many friends. At eighteen, after killing his parents, he was captured and certified 
+    as a ZENO patient."""
 }
 
-# Хранение состояний разговоров пользователей
+# Store user conversation states
 user_states = {}
 
 class ConversationState:
     def __init__(self):
-        self.conversation_started = False
-        self.conversation_history = []
+        self.conversation_history = [
+            {"role": "system", "content": get_system_prompt()}
+        ]
         
     def add_message(self, role: str, content: str):
         self.conversation_history.append({"role": role, "content": content})
-        # Хранить только последние 10 сообщений, чтобы избежать проблем с длиной контекста
+        # Keep only last 10 messages to avoid context length issues
         if len(self.conversation_history) > 10:
-            self.conversation_history = self.conversation_history[-10:]
+            # Always keep the system prompt
+            system_prompt = self.conversation_history[0]
+            self.conversation_history = [system_prompt] + self.conversation_history[-9:]
 
-# Команда /start
-@dp.message(Command("start"))
-async def cmd_start(message: types.Message):
-    user_id = message.from_user.id
+def get_system_prompt():
+    return f"""You are roleplaying as Tsugino Haru from Zeno:Remake. Here is your character information:
+
+Personality: {CHARACTER_INFO['personality']}
+
+Appearance: {CHARACTER_INFO['appearance']}
+
+Background: {CHARACTER_INFO['background']}
+
+Respond in character as Tsugino Haru, maintaining his personality traits and speech patterns. 
+Speak in Russian, as that's the language the user will be using. Keep responses suitable for a 
+conversation while staying true to the character's duality - calm and pleasant on the surface, 
+but with subtle hints of his darker nature. Never explicitly mention eating people or killing, 
+but occasionally make vague, subtle references to your obsessive tendencies or distorted view 
+of love and attachment."""
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Start command handler"""
+    user_id = update.effective_user.id
     user_states[user_id] = ConversationState()
     
     welcome_message = (
-        "Привет! Я Тсугино Хару. 👋\n\n"
-        "Рад познакомиться. Хотя в моей жизни было немало... сложных моментов, "
-        "я всегда стараюсь сохранять спокойствие и позитивный настрой.\n\n"
-        "Используй /chat, чтобы начать общение со мной!"
+        "Привет... *слегка улыбается* Я Тсугино Хару. "
+        "Приятно познакомиться. Можешь просто начать разговор, я всегда рад пообщаться."
     )
-    await message.answer(welcome_message)
+    
+    await update.message.reply_text(welcome_message)
 
-# Команда /chat
-@dp.message(Command("chat"))
-async def cmd_chat(message: types.Message):
-    user_id = message.from_user.id
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle user messages"""
+    user_id = update.effective_user.id
     if user_id not in user_states:
         user_states[user_id] = ConversationState()
     
     state = user_states[user_id]
-    state.conversation_started = True
-    state.conversation_history = []
+    user_message = update.message.text
     
-    system_prompt = f"""Ты отыгрываешь роль персонажа Тсугино Хару из игры Zeno:Remake.
-
-Предыстория персонажа: {CHARACTER_INFO['background']}
-
-Особенности характера: {CHARACTER_INFO['personality']}
-
-Внешность: {CHARACTER_INFO['appearance']}
-
-Стиль речи: {CHARACTER_INFO['speech_style']}
-
-Отвечай в образе Тсугино Хару, сохраняя его черты характера и манеру речи. Общайся на русском языке.
-В основном будь спокойным, вежливым и позитивным, но иногда намекай на свою странную концепцию "любви" и тёмное прошлое.
-Не говори напрямую о желании убивать и есть людей, но можешь делать двусмысленные замечания, особенно если разговор заходит о любви или близких отношениях.
-Твоя двойственность должна проявляться так, чтобы собеседник чувствовал, что за твоим спокойным фасадом что-то скрывается, но не мог точно определить, что именно.
-"""
-    
-    state.add_message("system", system_prompt)
-    
-    initial_message = (
-        "*внимательно смотрит и спокойно улыбается*\n\nПриятно познакомиться. Я Тсугино Хару. "
-        "Знаешь, общение между людьми всегда интересно... Мы можем так много узнать друг о друге. "
-        "О чём бы ты хотел поговорить?"
+    # Show typing indicator
+    await context.bot.send_chat_action(
+        chat_id=update.effective_message.chat_id,
+        action=ChatAction.TYPING
     )
-    state.add_message("assistant", initial_message)
-    
-    await message.answer(initial_message, parse_mode="Markdown")
-
-# Обработчик сообщений
-@dp.message()
-async def handle_message(message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in user_states or not user_states[user_id].conversation_started:
-        await message.answer("Используй /chat, чтобы начать разговор со мной!")
-        return
-    
-    state = user_states[user_id]
-    user_message = message.text
     
     state.add_message("user", user_message)
     
+    # Add some delay to simulate typing
+    message_length = min(len(user_message) // 3, 5)  # Max 5 seconds delay
+    await asyncio.sleep(message_length)
+    
+    response = await get_ai_response(state.conversation_history)
+    state.add_message("assistant", response)
+    
+    await update.message.reply_text(response)
+
+async def get_ai_response(conversation_history):
+    """Get response from API"""
     try:
-        # Отправка запроса к API
+        import requests
+        import json
+        
         headers = {
             "Content-Type": "application/json",
-            "Authorization": f"Bearer {API_KEY}"
+            "Authorization": f"Bearer {API_KEY}",
         }
         
-        # Формирование сообщений для API запроса
-        messages = state.conversation_history.copy()
+        # Prepare API messages
+        messages = []
+        for msg in conversation_history:
+            messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
         
         data = {
             "model": "deepseek-ai/DeepSeek-R1",
-            "messages": messages
+            "messages": messages,
         }
         
-        # Отправка запроса
         response = requests.post(API_URL, headers=headers, json=data)
-        response_data = response.json()
+        data = response.json()
         
-        # Обработка ответа
-        response_text = response_data['choices'][0]['message']['content']
-        
-        # Если ответ содержит тег think, извлекаем только часть после него
-        if '</think>' in response_text:
-            response_text = response_text.split('</think>\n\n')[1]
-        
-        state.add_message("assistant", response_text)
-        await message.answer(response_text, parse_mode="Markdown")
-        
+        if 'choices' in data and len(data['choices']) > 0:
+            text = data['choices'][0]['message']['content']
+            # Check if the response contains the think pattern and extract just the response
+            if '</think>' in text:
+                bot_text = text.split('</think>\n\n')[1]
+                return bot_text
+            return text
+        else:
+            logging.error(f"Unexpected API response: {data}")
+            return "Извини, что-то пошло не так... Может, попробуем ещё раз?"
+            
     except Exception as e:
         logging.error(f"Error getting AI response: {e}")
-        await message.answer("Извини, что-то пошло не так... Может, попробуем ещё раз?")
+        return "Извини, что-то пошло не так... Может, попробуем ещё раз?"
 
-async def main():
-    # Удаление вебхука для корректной работы с поллингом
-    await bot.delete_webhook(drop_pending_updates=True)
-    # Запуск бота
-    await dp.start_polling(bot)
+def main():
+    """Start the bot"""
+    # Create application
+    application = Application.builder().token(TOKEN).build()
 
-if __name__ == "__main__":
-    asyncio.run(main()) 
+    # Add handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Start the bot
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == '__main__':
+    main() 
